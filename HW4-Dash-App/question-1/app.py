@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import dash
-from dash.dependencies import Input, Output
 import dash_core_components as dcc
+from dash.dependencies import Input, Output
 import dash_html_components as html
 
 import pandas as pd
@@ -28,9 +28,11 @@ rk_data.WeekofMonth[rk_data.WeekofMonth == 5] = 4
 rk_data['EnteroCountsGreaterThan110'] = rk_data.EnteroCount > 110
 rk_data["MinYear"], rk_data["MaxYear"], rk_data["GMeanEnteroCount"], rk_data[
     "MeanRainAmount"] = rk_data.Year, rk_data.Year, rk_data.EnteroCount, rk_data.FourDayRainTotal
+rk_data["MonthWeek"] = 'Month ' + rk_data.Month.astype('str').str.cat(rk_data.WeekofMonth.astype('str'), sep=' - Week ')
 
+#Pivot Calculations
 df_rk = pd.pivot_table(rk_data,
-                       index=["Month", "WeekofMonth", "Site"],
+                       index=["MonthWeek", "Site"],
                        aggfunc={
                            'GMeanEnteroCount': gmean,
                            'SampleCount': "count",
@@ -46,27 +48,22 @@ df_rk = pd.pivot_table(rk_data,
 # Create safety indicator
 NotSafe1 = df_rk.EnteroCountsGreaterThan110 > 0
 NotSafe2 = (df_rk.SampleCount >= 5) & (df_rk.GMeanEnteroCount > 30)
-df_rk["HistoricallySafe"] = np.invert(NotSafe1 | NotSafe2)
+df_rk["HistoricallySafe"] = np.invert(NotSafe1 | NotSafe2).astype('str')
 
 # Sort by the best site per week of the month
 df_rk["BestSite"] = df_rk.sort_values(['HistoricallySafe', 'EnteroCountsGreaterThan110', 'MeanRainAmount'],
                                       ascending=[False, True, False]) \
-                        .groupby(["Month", "WeekofMonth"]) \
+                        .groupby(["MonthWeek"]) \
                         .cumcount() + 1
 
-# df_rk[["Month", "WeekofMonth", "BestSite",'HistoricallySafe','EnteroCountsGreaterThan110', 'MeanRainAmount']]\
-#     .sort_values(["Month", "WeekofMonth", "BestSite"]).tail(10)
-# df_rk.to_csv("mydf.csv")
+# Round decimals
+df_rk.MeanRainAmount, df_rk.GMeanEnteroCount = df_rk.MeanRainAmount.round(2), df_rk.GMeanEnteroCount.round(0)
+# Re-order columns
+df_rk = df_rk[['MonthWeek', 'BestSite', 'Site', 'HistoricallySafe', 'MeanRainAmount',
+               'SampleCount', 'EnteroCountsGreaterThan110', 'GMeanEnteroCount', 'MinYear', 'MaxYear']]
 
-df_rk.describe()
-df_rk.info()
-df_rk.tail(10)
-np.sum(df_rk.HistoricallySafe) / df_rk.HistoricallySafe.count()
-
-def generate_table(dataframe, max_rows=10):
-    """
-    Generate an HTML table
-    """
+def generate_table(dataframe, max_rows=20):
+    """Creates HTML Table"""
     return html.Table(
         # Header
         [html.Tr([html.Th(col) for col in dataframe.columns])] +
@@ -78,9 +75,9 @@ def generate_table(dataframe, max_rows=10):
     )
 
 ###Part 2: CREATE WEB APP
+
 app = dash.Dash()
-month_dropdown_items = df_rk.Month.unique()
-week_dropdown_items = df_rk.WeekofMonth.unique()
+dropdown_items = df_rk.MonthWeek.unique()
 
 colors = {
     'background': '#000099',
@@ -112,63 +109,40 @@ app.layout = html.Div(style={'backgroundColor': colors['background']}, children=
     ),
 
     html.H3(
-        children='Pick a month & week below to see the best and safest sites',
+        children='Pick a month & week below to see the best site for that time of year',
         style={
             'textAlign': 'center',
             'color': colors['text']
         }
     ),
 
-    # html.Div(children=
-    #     [
-            #html.Label('Month'),
-    dcc.Dropdown(
-        id="select-month",
-        options=[
-            {'label': i, 'value': i} for i in month_dropdown_items
-        ],
-        searchable=False,
-        placeholder="Select a month number"
-    ),
-
-    #https://community.plot.ly/t/how-to-populate-a-dropdown-from-unique-values-in-a-pandas-data-frame/5543/2
-    #html.Label('Week'),
-    dcc.Dropdown(
-        id="select-week",
-        options=[
-            {'label': i, 'value': i} for i in week_dropdown_items
-        ],
-        searchable=False,
-        placeholder="Select a week of the month"
-    ),
-    #style={'width': '50%'}
-    # , 'display': 'inline-block'
-    # style={'columnCount': 2}
-    # ),
-    #],
-
-    # html.Div(children='The safest and best site.', style={
-    #     'textAlign': 'center',
-    #     'color': colors['text']
-    # }),
-
-    dcc.Graph(
-        id='example-graph-2',
-        figure={
-            'data': [
-                {'x': [1, 2, 3], 'y': [4, 1, 2], 'type': 'bar', 'name': 'SF'},
-                {'x': [1, 2, 3], 'y': [2, 4, 5], 'type': 'bar', 'name': u'Montréal'},
-            ],
-            'layout': {
-                'plot_bgcolor': colors['background'],
-                'paper_bgcolor': colors['background'],
-                'font': {
-                    'color': colors['text']
-                }
-            }
+    html.H4(
+        children='If available, the best site will be one that has been "historically safe" (without any Entero Count issues) and with the highest rainfall average',
+        style={
+            'textAlign': 'center',
+            'color': colors['text']
         }
-    )
-])
+    ),
+
+    dcc.Dropdown(
+        id="select-month-week",
+        options=[
+            {'label': i, 'value': i} for i in dropdown_items
+        ],
+        searchable=False,
+        placeholder="Select a Month & Week"
+    ),
+    html.Div(id='my-table', style={'color': colors['text']})
+ ])
+
+# https://community.plot.ly/t/how-to-populate-a-dropdown-from-unique-values-in-a-pandas-data-frame/5543/2
+# https://community.plot.ly/t/display-tables-in-dash/4707
+
+@app.callback(Output('my-table', 'children'),[Input('select-month-week', 'value')])
+def table_update(value):
+    df1 = df_rk[df_rk.MonthWeek == value].sort_values(["BestSite"])
+    df1 = df1.drop("MonthWeek", axis=1)
+    return generate_table(df1)
 
 if __name__ == '__main__':
-   app.run_server(debug=False)
+   app.run_server(debug=True)
