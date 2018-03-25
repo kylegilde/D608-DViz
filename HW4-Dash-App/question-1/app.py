@@ -80,8 +80,8 @@ app = dash.Dash()
 dropdown_items = df_rk.MonthWeek.unique()
 
 colors = {
-    'background': '#000099',
-    'text': '#ffffff'
+    'background': '#d6d6c2',
+    'text': '#000000'
 }
 
 app.layout = html.Div(style={'backgroundColor': colors['background']}, children=[
