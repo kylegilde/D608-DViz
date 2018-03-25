@@ -132,6 +132,7 @@ app.layout = html.Div(style={'backgroundColor': colors['background']}, children=
         searchable=False,
         placeholder="Select a Month & Week"
     ),
+
     html.Div(id='my-table', style={'color': colors['text']})
  ])
 
