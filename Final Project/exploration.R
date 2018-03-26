@@ -19,5 +19,6 @@ crime_df <- read.csv("https://data.cityofchicago.org/api/views/ijzp-q8t2/rows.cs
 crime_df_v2 <- crime_df %>% select(c(Date, Primary.Type, Description, Location, Arrest, 
                                       Domestic, Community.Area, Year, Latitude, Longitude))
 
+write.csv(crime_df_v2, "crime_df_v2.csv")
 
-head(crime_df_v2)
+View(crime_df_v2)
