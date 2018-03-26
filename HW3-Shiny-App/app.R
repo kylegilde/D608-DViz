@@ -9,11 +9,12 @@ installed_and_loaded <- function(pkg){
 }
 
 # required packages
-packages <- c("shiny","tidyverse", "ggthemes", "shinythemes", "quantmod", "zoo") 
-installed_and_loaded(packages)
+packages <- c("shiny","rsconnect", "tidyverse", "ggthemes", "shinythemes", "quantmod", "zoo") 
+#installed_and_loaded(packages)
+sapply(packages, require, character.only = TRUE, quietly = TRUE, warn.conflicts = FALSE)
 
 # read data
-cdc <- read.csv("https://raw.githubusercontent.com/kylegilde/D608-Data-Viz/master/data/cleaned-cdc-mortality-1999-2010-2.csv")
+cdc <- read.csv("https://raw.githubusercontent.com/kylegilde/D608-DViz/master/data/cleaned-cdc-mortality-1999-2010-2.csv")
 str(cdc)
 
 # add YoY variables

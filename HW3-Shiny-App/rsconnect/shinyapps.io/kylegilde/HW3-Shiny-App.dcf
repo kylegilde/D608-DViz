@@ -1,0 +1,13 @@
+name: HW3-Shiny-App
+title: HW3-Shiny-App
+username:
+account: kylegilde
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 307864
+bundleId: 1287567
+url: https://kylegilde.shinyapps.io/HW3-Shiny-App/
+when: 1522023604.42662
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: Assignment 3.pdf
