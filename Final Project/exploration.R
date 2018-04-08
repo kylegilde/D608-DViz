@@ -13,7 +13,7 @@ install_load(load_packages)
 
 View(my_results)
 
-
+rm(crime_df)
 crime_df <- read.csv("https://data.cityofchicago.org/api/views/ijzp-q8t2/rows.csv?accessType=DOWNLOAD")
 
 crime_df_v2 <- crime_df %>% select(c(Date, Primary.Type, Description, Location, Arrest, 
