@@ -1,4 +1,21 @@
-<html>
+<!DOCTYPE html>
+<meta charset="utf-8">
+
+<head>
+	<style>
+
+	.axis {
+	  font: 10px sans-serif;
+	}
+
+	.axis path,
+	.axis line {
+	  fill: none;
+	  stroke: #000;
+	  shape-rendering: crispEdges;
+	}
+
+	</style>
 
 <!--
     
@@ -33,14 +50,11 @@
 
 <head><title>CUNY Data Science 608</title></head>
 
-<script src="https://d3js.org/d3.v5.min.js"></script>
-
 <body>
 
-<h1>Homework #5: HTML & Javascript</h1>
+<h1>Homework #6: HTML & Javascript</h1>
 <h2>Beginner Questions</h2>
 <h3>Kyle Gilde</h3>
-<h3>4-14-18</h3>
 
 <script type="text/javascript">
 
@@ -50,120 +64,89 @@ document.write('<p>Current time: ' + rightNow + '<p>');
 
 </script>
 
+<script src="http://d3js.org/d3.v3.min.js"></script>
+<!-- question 1  type="text/javascript"-->
 
-<!-- question 1 -->
-
-<script type="text/javascript">
+<script>
 
 // writing to a document directly
 
 document.write('<b>Question 1: Create a function to reverse any word that you type in.</b>');
 
-d3.csv("https://raw.githubusercontent.com/kylegilde/D608-DViz/master/HW6-JS%20D3/crime_samp.csv", function(data){
+var margin = {top: 20, right: 20, bottom: 70, left: 40},
+    width = 600 - margin.left - margin.right,
+    height = 300 - margin.top - margin.bottom;
+
+// Parse the date / time
+//var	parseDate = d3.time.format("%Y-%m").parse;
+
+var x = d3.scale.ordinal().rangeRoundBands([0, width], .05);
+
+var y = d3.scale.linear().range([height, 0]);
+
+var xAxis = d3.svg.axis()
+    .scale(x)
+    .orient("bottom");
+    //.tickFormat(d3.time.format("%Y-%m"));
+
+var yAxis = d3.svg.axis()
+    .scale(y)
+    .orient("left")
+    .ticks(10);
+
+var svg = d3.select("body").append("svg")
+    .attr("width", width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom)
+  .append("g")
+    .attr("transform", 
+          "translate(" + margin.left + "," + margin.top + ")");
+
+var data = d3.csv("https://raw.githubusercontent.com/kylegilde/D608-DViz/master/HW6-JS%20D3/crime_samp2.csv", function(data){
     console.log(data);
+});		  
+		  
+d3.csv(data, function(error, data) {
+
+    data.forEach(function(d) {
+        d.crime = d.crime;
+        d.incidents = +d.incidents;
+    });
+  	
+  x.domain(data.map(function(d) { return d.crime; }));
+  y.domain([0, d3.max(data, function(d) { return d.incidents; })]);
+  
+  svg.append("g")
+      .attr("class", "x axis")
+      .attr("transform", "translate(0," + height + ")")
+      .call(xAxis)
+    .selectAll("text"
+      .style("text-anchor", "end")
+      .attr("dx", "-.8em")
+      .attr("dy", "-.55em")
+      .attr("transform", "rotate(-90)" );)
+
+  svg.append("g")
+      .attr("class", "y axis")
+      .call(yAxis)
+    .append("text")
+      .attr("transform", "rotate(-90)")
+      .attr("y", 6)
+      .attr("dy", ".71em")
+      .style("text-anchor", "end")
+      .text("Number of Incidents");
+
+  svg.selectAll("bar")
+      .data(data)
+    .enter().append("rect")
+      .style("fill", "steelblue")
+      .attr("x", function(d) { return x(d.crime); })
+      .attr("width", x.rangeBand())
+      .attr("y", function(d) { return y(d.incidents); })
+      .attr("height", function(d) { return height - y(d.incidents); });
+
 });
 
-document.write(data)
-
 </script>
 
-<script type="text/javascript">
-
-document.write('<br><p>Type a word into the text box and click Enter:')
-
-// Basic functions
-
-function reverseWord(word){
-	//Reference:
-	//https://medium.com/sonyamoisset/reverse-a-string-in-javascript-a18027b8e91c
-    var splitWord = word.split("");
-        reverseArray = splitWord.reverse();
-        joinArray = reverseArray.join("");
-    
-    return(joinArray);
-};
-
-function processWord(){
-    var t = document.getElementById("target");
-    t.innerHTML = reverseWord(document.getElementById('word').value);
-}
-</script>
-
-<p>
-
-<form>
-    <input id="word" type="text" size="10">
-    <input type="button" value="Enter" onClick="processWord();">
-</form>
-
-<div id="target"></div>
-
-</p>
-
-</br>
-
-<!-- question 2 -->
-
-<script type="text/javascript">
-
-// writing to a document directly
-
-document.write('<b>Question 2: Create a function that takes an input number, and prints a table with the first 20 multiples of the number, in order 5x4</b>');
-
-</script>
-
-<script type="text/javascript">
-
-document.write('<br><p>Select a number and click Enter:')
-
-// Basic functions
-
-function twentyMultiples(number){
-	//References:
-	//https://stackoverflow.com/questions/3746725/create-a-javascript-array-containing-1-n
-    //https://stackoverflow.com/questions/22464605/convert-a-1d-array-to-2d-array
-	var twenty = 20, 
-		ncols = 4,
-		maxNum = number * twenty + 1,
-		multiples = d3.range(number, maxNum, number),
-        matrix = [];
-
-    while(multiples.length) matrix.push(multiples.splice(0, ncols));
-
-    return(matrix);
-};
-
-function createTable(){
-    //References:
-    //https://stackoverflow.com/questions/15164655/generate-html-table-from-2d-javascript-array
-    tableData = twentyMultiples(document.getElementById('num').value);
-    var table = document.createElement('table');
-    var tableBody = document.createElement('tbody');
-
-    tableData.forEach(function(rowData) {
-        var row = document.createElement('tr');
-
-        rowData.forEach(function(cellData) {
-            var cell = document.createElement('td');
-            cell.appendChild(document.createTextNode(cellData));
-            row.appendChild(cell);
-        });
-        tableBody.appendChild(row);
-    });
-
-    table.appendChild(tableBody);
-    document.body.appendChild(table);
-}
-</script>
-
-<p>
-<form>
-    <input id="num" type="number" size="4">
-    <input type="button" value="Enter" onClick="createTable();">
-</form>
-</p>
-
-<div id="target2"></div>
 
 </body>
-</html>
