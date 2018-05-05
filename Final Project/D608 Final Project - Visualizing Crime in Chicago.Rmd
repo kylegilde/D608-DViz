@@ -1,0 +1,223 @@
+---
+title: "DATA 608 CUNY Data Science Data Visualization" 
+subtitle: "Final Project - Visualizing Crime in Chicago"
+author: "Kyle Gilde"
+date: "5/15/2018"
+output: 
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+    toc: true
+    toc_depth: 2
+
+---
+
+```{r knitr_options, echo=FALSE}
+
+knitr::opts_chunk$set(
+                      error = F
+                      , message = T
+                      #,tidy = T
+                      , cache = T
+                      , warning = F
+                      , echo = F
+                      )
+
+```
+
+
+
+```{r packages, echo=F, warning=F, message=F, results=F} 
+load_install <- function(pkg){
+  # Load packages & Install them if needed.
+  # CODE SOURCE: https://gist.github.com/stevenworthington/3178163
+  new.pkg <- pkg[!(pkg %in% installed.packages()[, "Package"])]
+  if (length(new.pkg)) install.packages(new.pkg, dependencies = TRUE)
+  sapply(pkg, require, character.only = TRUE, quietly = TRUE, warn.conflicts = FALSE)
+}
+
+
+# required packages
+packages <- c("prettydoc","tidyverse","DT", "knitr", "ggthemes", "psych", "corrplot", "reshape2", "VIM", "GGally", "anytime", "lubridate", "data.table") 
+load_install(packages)
+```
+
+
+```{r rawdata}
+#get raw data
+setwd("C:\\Users\\kyleg")
+crime_url <- "https://data.cityofchicago.org/api/views/ijzp-q8t2/rows.csv?accessType=DOWNLOAD"
+if (!exists("crime_raw")) {
+  tryCatch(crime_raw <- read.csv("crime_raw.csv"), 
+           error = function(x) {
+             print("File not in WD. Downloading from the source.")
+             crime_raw <- read.csv("crime_url")
+             }
+  )
+}
+```
+
+```{r munge}
+setwd("C:\\Users\\kyleg")
+#get the community area table
+community_url <- "https://data.cityofchicago.org/api/views/igwz-8jzy/rows.csv?accessType=DOWNLOAD"
+if (!exists("community_area_df")){
+  community_area_df <- read.csv(community_url)
+}
+community_area_key <- dplyr::select(community_area_df, c(AREA_NUMBE, COMMUNITY))
+
+#if (!exists("crime_df")){   
+  crime_df <- 
+     crime_raw %>% 
+     data.table() %>% 
+     left_join(community_area_key, 
+           by = c("Community.Area" = "AREA_NUMBE")) %>% 
+     mutate(
+        DateTime = lubridate::mdy_hms(as.character(Date)),
+        Date_rw = as.Date.POSIXct(DateTime),
+        Year = as.factor(Year),
+        Month = month(DateTime, label = T),
+        DayOfMonth = as.factor(day(DateTime)),
+        DayOfWeek = wday(DateTime, label = T),
+        Hour = as.factor(hour(DateTime)),
+        Crime.Type = as.factor(
+          ifelse(Primary.Type %in% c("ROBBERY", "BURGLARY", "CRIM SEXUAL ASSAULT",
+                             "HOMICIDE", "HUMAN TRAFFICKING", "BATTERY", 
+                             "MOTOR VEHICLE THEFT", "SEX OFFENSE", "KIDNAPPING", 
+                             "DOMESTIC VIOLENCE", "ASSAULT", "ARSON",
+                             "INTIMIDATION"), 
+             "Violent", "Nonviolent"))
+       ) %>% 
+     dplyr::select(
+       c(Crime = Primary.Type, Crime.Type, Description, Arrest, Domestic, 
+       Date = Date_rw, Year, Month, DayOfMonth, DayOfWeek, Hour,
+       Community.Area = COMMUNITY, Latitude, Longitude, Location.Description)) 
+    
+#} 
+```
+
+
+# About the Data Set
+
+This [Crimes data set](https://data.cityofchicago.org/Public-Safety/Crimes-2001-to-present/ijzp-q8t2) is made available on the [City of Chicago's Data Portal](https://data.cityofchicago.org) and is sourced from the  Chicago Police Department's CLEAR (Citizen Law Enforcement Analysis and Reporting) system. Each record is a reported incident of crime, and the set contains nearly 6.6 million records between 1/1/2001 and 4/27/2018. The Chicago Police Department does not guarantee the completeness of the records and cautions against making comparision over time.
+
+## Missing Values
+
+```{r}
+
+table(crime_raw$FBI.Code, useNA = "always")
+View(community_area_key)
+
+sum(is.na(crime_raw$Longitude))
+table(crime_raw$Community.Area, useNA = "always")
+```
+
+
+```{r missing, fig.width=12, fig.height=12}
+## Missing Values
+memory.limit(16000)
+missing_plot <- VIM::aggr(crime_df,  numbers=TRUE, sortVars=TRUE,
+                       labels=names(crime_df), 
+                       ylab=c("Missing Value Counts", "Pattern"))
+
+
+summary(missing_plot)
+```
+
+## The Variables
+
+From the data set's original 22 variables, we have retained some of them and derived new variables. The new set of variables that fall into three categories and a brief description of them follows:
+
+1. Crime Variables:
+
++ `Crime`: 
+
++ `Crime.Type`: We categorized the 
+
++ `Description`:
+
++ `Arrest`:
+
++ `Domestic`
+
+2. Time Variables:
+
++ From the provided timestamp of the incident, we have parsed the following time dimensions using the `lubridate` package: `Date`, `Year`, `Month`, `DayOfMonth`,  `DayOfWeek` and `Hour`
+
+3. Location Variables
+
++ `Community.Area`:  [Community Areas](https://data.cityofchicago.org/Facilities-Geographic-Boundaries/Boundaries-Community-Areas-current-/cauq-8yn6)
+
++ `Latitude`  
+
++ `Longitude`  
+
++ `Location.Description`
+
+variables include the date and time, lat/long, neighborhood, type of location, crime category, and whether an arrest was made.
+
+```{r}
+str(crime_raw)
+str(crime_df)
+names(crime_df)
+```
+
+
+
+
+```{r stats}
+sort(table(crime_df$Year), decreasing = T)
+
+summary(crime_df)
+
+str(crime_df)
+```
+
+# Explore Data Set
+
+## Categorical Variable Values
+
+```{r catvalues, fig.width=12, fig.height=12}
+###Categorical & Discrete variables Frequencies
+cat_value_freq <-   
+  select_if(crime_df, is.factor) %>% 
+  gather("var", "value") %>% 
+  group_by(var) %>% 
+  count(var, value) %>%
+  mutate(prop = prop.table(n)) %>% 
+  filter(prop > .01)
+
+
+ggplot(data = cat_value_freq, 
+       aes(x = reorder(value, prop),
+       y = prop)) + 
+  geom_bar(stat = "identity") + 
+  facet_wrap(~var, scales = "free") +
+  coord_flip() + 
+  ggthemes::theme_fivethirtyeight()
+
+
+# https://stackoverflow.com/questions/34860535/how-to-use-dplyr-to-generate-a-frequency-table?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
+
+
+
+```
+
+
+
+## Tree map library(treemapify) Crime & Description
+## Mosiac Chart  library(GoodmanKruskal)
+
+# Crime Across Time
+## Day of Week by Hour Heatmap
+## forecast::ggseasonplot
+## other periodicity
+## Animated Bubble chart library(gganimate) library(gapminder)
+https://www.r-bloggers.com/to-eat-or-not-to-eat-thats-the-question-measuring-the-association-between-categorical-variables/
+
+# Crime by Community Area
+## Bivariate Cloropleth
+## Community Areas
+## Population Pyramid: Community Areas by Crime.Type
+http://r-statistics.co/Top50-Ggplot2-Visualizations-MasterList-R-Code.html
+
