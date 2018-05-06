@@ -35,10 +35,10 @@ load_install <- function(pkg){
   if (length(new.pkg)) install.packages(new.pkg, dependencies = TRUE)
   sapply(pkg, require, character.only = TRUE, quietly = TRUE, warn.conflicts = FALSE)
 }
-
-
+# remove.packages("tidyverse")
+# install.packages("tidyverse", dependencies=TRUE)
 # required packages
-packages <- c("prettydoc","tidyverse","DT", "knitr", "ggthemes", "psych", "corrplot", "reshape2", "VIM", "GGally", "anytime", "lubridate", "data.table") 
+packages <- c("prettydoc","tidyverse","DT", "knitr", "ggthemes", "psych", "corrplot", "reshape2", "VIM", "GGally", "anytime", "lubridate", "data.table", "treemapify")
 load_install(packages)
 ```
 
@@ -70,31 +70,34 @@ community_area_key <- dplyr::select(community_area_df, c(AREA_NUMBE, COMMUNITY))
   crime_df <- 
      crime_raw %>% 
      data.table() %>% 
+     filter(Year < 2018) %>% 
+     sample_n(500000) %>% 
      left_join(community_area_key, 
            by = c("Community.Area" = "AREA_NUMBE")) %>% 
      mutate(
         DateTime = lubridate::mdy_hms(as.character(Date)),
         Date_rw = as.Date.POSIXct(DateTime),
-        Year = as.factor(Year),
+        Year = as.ordered(Year),
         Month = month(DateTime, label = T),
-        DayOfMonth = as.factor(day(DateTime)),
+        DayOfMonth = as.ordered(day(DateTime)),
         DayOfWeek = wday(DateTime, label = T),
-        Hour = as.factor(hour(DateTime)),
+        Hour = as.ordered(hour(DateTime)),
         Crime.Type = as.factor(
-          ifelse(Primary.Type %in% c("ROBBERY", "BURGLARY", "CRIM SEXUAL ASSAULT",
-                             "HOMICIDE", "HUMAN TRAFFICKING", "BATTERY", 
-                             "MOTOR VEHICLE THEFT", "SEX OFFENSE", "KIDNAPPING", 
-                             "DOMESTIC VIOLENCE", "ASSAULT", "ARSON",
-                             "INTIMIDATION"), 
-             "Violent", "Nonviolent"))
+        ifelse(Primary.Type %in% c("ROBBERY", "BURGLARY", 
+             "CRIM SEXUAL ASSAULT", "HOMICIDE", "HUMAN TRAFFICKING",
+             "BATTERY", "MOTOR VEHICLE THEFT", "SEX OFFENSE",
+             "KIDNAPPING", "DOMESTIC VIOLENCE", "ASSAULT", "ARSON",
+             "INTIMIDATION"), 
+           "Violent", "Nonviolent"))
        ) %>% 
      dplyr::select(
-       c(Crime = Primary.Type, Crime.Type, Description, Arrest, Domestic, 
-       Date = Date_rw, Year, Month, DayOfMonth, DayOfWeek, Hour,
+       c(Crime = Primary.Type, Crime.Type, Crime.Description = Description, Arrest, Domestic, 
+       DateTime, Date = Date_rw, Year, Month, DayOfMonth, DayOfWeek, Hour,
        Community.Area = COMMUNITY, Latitude, Longitude, Location.Description)) 
     
 #} 
 ```
+
 
 
 # About the Data Set
@@ -103,25 +106,31 @@ This [Crimes data set](https://data.cityofchicago.org/Public-Safety/Crimes-2001-
 
 ## Missing Values
 
-```{r}
-
-table(crime_raw$FBI.Code, useNA = "always")
-View(community_area_key)
-
-sum(is.na(crime_raw$Longitude))
-table(crime_raw$Community.Area, useNA = "always")
-```
-
-
-```{r missing, fig.width=12, fig.height=12}
+```{r missing, fig.width=11, fig.height=11, results=F}
 ## Missing Values
 memory.limit(16000)
-missing_plot <- VIM::aggr(crime_df,  numbers=TRUE, sortVars=TRUE,
-                       labels=names(crime_df), 
-                       ylab=c("Missing Value Counts", "Pattern"))
+#par(mar = c(10,4,4,2) + 0.1)
+missing_plot <- VIM::aggr(crime_df,  
+                      numbers = T, 
+                      sortVars = T,
+                      col = c("lightgreen", "darkred", "orange"),
+                      #only.miss = T,
+                      #combined = T, 
+                      labels=str_sub(names(crime_df), 1, 8), 
+                      ylab=c("Missing Value Counts"
+                             , "Pattern"))
 
 
+#par(oma=c(2,0,0,0))
+par(mar=c(3,0,0,0))
+#hist(1:1000)
 summary(missing_plot)
+
+
+
+
+
+
 ```
 
 ## The Variables
@@ -178,39 +187,95 @@ str(crime_df)
 ## Categorical Variable Values
 
 ```{r catvalues, fig.width=12, fig.height=12}
+#devtools::install_github('hadley/ggplot2')
+install_load("plotly")
+#install.packages("tidyverse")
+
 ###Categorical & Discrete variables Frequencies
-cat_value_freq <-   
-  select_if(crime_df, is.factor) %>% 
+cat_value_freq <-  
+  crime_df %>% 
+  select_if(is.factor) %>% 
+  select_if(function(x) !is.ordered(x)) %>% 
   gather("var", "value") %>% 
   group_by(var) %>% 
   count(var, value) %>%
   mutate(prop = prop.table(n)) %>% 
-  filter(prop > .01)
+  filter(prop > .02)
 
-
-ggplot(data = cat_value_freq, 
-       aes(x = reorder(value, prop),
-       y = prop)) + 
-  geom_bar(stat = "identity") + 
+p <- 
+  ggplot(data = cat_value_freq, 
+       aes(x = reorder(value, prop), y = prop)) + 
+  geom_bar(stat = "identity", fill = "tomato3") + 
   facet_wrap(~var, scales = "free") +
   coord_flip() + 
   ggthemes::theme_fivethirtyeight()
 
+ggplotly(p)
 
 # https://stackoverflow.com/questions/34860535/how-to-use-dplyr-to-generate-a-frequency-table?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
+```
 
 
+```{r ord_cat_value, fig.width=12, fig.height=12}
+ord_cat_value_freq <-   
+  select_if(crime_df, is.ordered) %>% 
+  gather("var", "value") %>% 
+  group_by(var) %>% 
+  count(var, value) %>%
+  mutate(prop = prop.table(n)) %>% 
+  filter(prop > .02)
+
+ggplot(data = ord_cat_value_freq, 
+       aes(x = reorder(value, prop),
+       y = prop)) + 
+  geom_bar(stat = "identity", fill = "tomato3") + 
+  facet_wrap(~var, scales = "free") +
+  coord_flip() + 
+  ggthemes::theme_fivethirtyeight()
 
 ```
 
 
-
 ## Tree map library(treemapify) Crime & Description
-## Mosiac Chart  library(GoodmanKruskal)
+
+```{r Treemap, fig.width=12, fig.height=12}
+
+
+treemap_df <- 
+  crime_df %>% 
+  dplyr::select(c(parent = Crime,
+                  id = Crime.Description)) %>% 
+  group_by() %>% 
+  count(parent, id)
+
+treeMapCoordinates <- treemapify(treemap_df,
+                                 area = "n"#,
+                                 #fill = "parent",
+                                 # label = "id",
+                                 #group = "parent"
+                                 )
+
+# treeMapPlot <- ggplotify(treeMapCoordinates) +
+#                   scale_x_continuous(expand = c(0, 0)) +
+#                   scale_y_continuous(expand = c(0, 0)) +
+#                   scale_fill_brewer(palette = "Dark2")
+
+ggplot2::ggplot(treeMapCoordinates
+                ) + geom_treemap(ggplot2::aes(area = n, fill = n))
+print(treeMapPlot)
+
+```
+
+## Mosiac Chart  library(GoodmanKruskal) library(vcd)
+
+mosaic(HairEyeColor, shade = TRUE, legend = TRUE) 
+## gballoonplot() [in ggpubr]
+http://www.sthda.com/english/articles/32-r-graphics-essentials/129-visualizing-multivariate-categorical-data/
 
 # Crime Across Time
 ## Day of Week by Hour Heatmap
 ## forecast::ggseasonplot
+## continuous datatime by 
 ## other periodicity
 ## Animated Bubble chart library(gganimate) library(gapminder)
 https://www.r-bloggers.com/to-eat-or-not-to-eat-thats-the-question-measuring-the-association-between-categorical-variables/
