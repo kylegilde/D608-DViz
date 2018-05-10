@@ -9,7 +9,7 @@ output:
     highlight: github
     toc: true
     toc_depth: 2
-
+    #code_folding: hide
 ---
 
 ```{r knitr_options, echo=FALSE}
@@ -28,31 +28,33 @@ knitr::opts_chunk$set(
 
 
 ```{r packages, echo=F, warning=F, message=F, results=F} 
-load_install <- function(pkg){
+install_load <- function(pkg){
   # Load packages & Install them if needed.
   # CODE SOURCE: https://gist.github.com/stevenworthington/3178163
   new.pkg <- pkg[!(pkg %in% installed.packages()[, "Package"])]
   if (length(new.pkg)) install.packages(new.pkg, dependencies = TRUE)
   sapply(pkg, require, character.only = TRUE, quietly = TRUE, warn.conflicts = FALSE)
 }
-# remove.packages("tidyverse")
-# install.packages("tidyverse", dependencies=TRUE)
+
 # required packages
-packages <- c("prettydoc","tidyverse","DT", "knitr", "ggthemes", "psych", "corrplot", "reshape2", "VIM", "GGally", "anytime", "lubridate", "data.table", "treemapify")
-load_install(packages)
+packages <- c("prettydoc","tidyverse","DT", "knitr", "ggthemes", "psych", "reshape2", "VIM", "GGally", "anytime", "lubridate", "data.table", "treemapify", "ggplot2", "treemap", "vcd")
+
+install_load(packages)
 ```
 
 
-```{r rawdata}
+```{r rawdata, result=F}
 #get raw data
 setwd("C:\\Users\\kyleg")
-crime_url <- "https://data.cityofchicago.org/api/views/ijzp-q8t2/rows.csv?accessType=DOWNLOAD"
+memory.limit(size = 16000)
 if (!exists("crime_raw")) {
   tryCatch(crime_raw <- read.csv("crime_raw.csv"), 
-           error = function(x) {
-             print("File not in WD. Downloading from the source.")
-             crime_raw <- read.csv("crime_url")
-             }
+     error = function(x) {
+       print("File not in WD. Downloading from the source.")
+       crime_url <- "https://data.cityofchicago.org/api/views/ijzp-q8t2/rows.csv?accessType=DOWNLOAD"
+       crime_raw <- read.csv("crime_url")
+       write.csv(crime_raw, "crime_raw.csv")
+       }
   )
 }
 ```
@@ -61,55 +63,61 @@ if (!exists("crime_raw")) {
 setwd("C:\\Users\\kyleg")
 #get the community area table
 community_url <- "https://data.cityofchicago.org/api/views/igwz-8jzy/rows.csv?accessType=DOWNLOAD"
-if (!exists("community_area_df")){
-  community_area_df <- read.csv(community_url)
-}
+
+if (!exists("community_area_df")){community_area_df <- read.csv(community_url)}
+
 community_area_key <- dplyr::select(community_area_df, c(AREA_NUMBE, COMMUNITY))
 
-#if (!exists("crime_df")){   
-  crime_df <- 
-     crime_raw %>% 
-     data.table() %>% 
-     filter(Year < 2018) %>% 
-     sample_n(500000) %>% 
-     left_join(community_area_key, 
-           by = c("Community.Area" = "AREA_NUMBE")) %>% 
-     mutate(
-        DateTime = lubridate::mdy_hms(as.character(Date)),
-        Date_rw = as.Date.POSIXct(DateTime),
-        Year = as.ordered(Year),
-        Month = month(DateTime, label = T),
-        DayOfMonth = as.ordered(day(DateTime)),
-        DayOfWeek = wday(DateTime, label = T),
-        Hour = as.ordered(hour(DateTime)),
-        Crime.Type = as.factor(
-        ifelse(Primary.Type %in% c("ROBBERY", "BURGLARY", 
-             "CRIM SEXUAL ASSAULT", "HOMICIDE", "HUMAN TRAFFICKING",
-             "BATTERY", "MOTOR VEHICLE THEFT", "SEX OFFENSE",
-             "KIDNAPPING", "DOMESTIC VIOLENCE", "ASSAULT", "ARSON",
-             "INTIMIDATION"), 
-           "Violent", "Nonviolent"))
-       ) %>% 
-     dplyr::select(
-       c(Crime = Primary.Type, Crime.Type, Crime.Description = Description, Arrest, Domestic, 
-       DateTime, Date = Date_rw, Year, Month, DayOfMonth, DayOfWeek, Hour,
-       Community.Area = COMMUNITY, Latitude, Longitude, Location.Description)) 
-    
-#} 
+if (!exists("crime_df")){
+    crime_df <- 
+       crime_raw %>% 
+       data.table() %>% 
+       filter(Year < 2018) %>% 
+       sample_n(500000) %>% 
+       left_join(community_area_key, 
+             by = c("Community.Area" = "AREA_NUMBE")) %>% 
+       mutate(
+          DateTime = lubridate::mdy_hms(as.character(Date)),
+          Date_rw = as.Date.POSIXct(DateTime),
+          Year = as.ordered(Year),
+          Month = month(DateTime, label = T),
+          DayOfMonth = as.ordered(day(DateTime)),
+          DayOfWeek = wday(DateTime, label = T),
+          Hour = as.ordered(hour(DateTime)),
+          Crime.Type = as.factor(
+          ifelse(Primary.Type %in% c("ROBBERY", "BURGLARY", 
+               "CRIM SEXUAL ASSAULT", "HOMICIDE", "HUMAN TRAFFICKING",
+               "BATTERY", "MOTOR VEHICLE THEFT", "SEX OFFENSE",
+               "KIDNAPPING", "DOMESTIC VIOLENCE", "ASSAULT", "ARSON",
+               "INTIMIDATION"), 
+             "Violent", "Nonviolent"))
+         ) %>% 
+       dplyr::select(
+         c(Crime = Primary.Type, Crime.Type, Crime.Description = Description, Arrest, Domestic, 
+         DateTime, Date = Date_rw, Year, Month, DayOfMonth, DayOfWeek, Hour,
+         Community.Area = COMMUNITY, Latitude, Longitude, Location.Description))
+} 
+
+  
 ```
 
 
 
 # About the Data Set
 
-This [Crimes data set](https://data.cityofchicago.org/Public-Safety/Crimes-2001-to-present/ijzp-q8t2) is made available on the [City of Chicago's Data Portal](https://data.cityofchicago.org) and is sourced from the  Chicago Police Department's CLEAR (Citizen Law Enforcement Analysis and Reporting) system. Each record is a reported incident of crime, and the set contains nearly 6.6 million records between 1/1/2001 and 4/27/2018. The Chicago Police Department does not guarantee the completeness of the records and cautions against making comparision over time.
+This [Crimes data set](https://data.cityofchicago.org/Public-Safety/Crimes-2001-to-present/ijzp-q8t2) is made available on the [City of Chicago's Data Portal](https://data.cityofchicago.org) and is sourced from the  Chicago Police Department's CLEAR (Citizen Law Enforcement Analysis and Reporting) system. Each record is a reported incident of crime, and the set contains nearly 6.6 million records between 1/1/2001 and 4/27/2018. The Chicago Police Department does not guarantee the completeness of the records and cautions against making comparision over time. Our visualizations will look at changes over time with the caveat that the data set may be missing data at random or not a random.
+
+## Why this data set
+
+Over the 
 
 ## Missing Values
+
+Three variables are missing values. 
 
 ```{r missing, fig.width=11, fig.height=11, results=F}
 ## Missing Values
 memory.limit(16000)
-#par(mar = c(10,4,4,2) + 0.1)
 missing_plot <- VIM::aggr(crime_df,  
                       numbers = T, 
                       sortVars = T,
@@ -121,31 +129,27 @@ missing_plot <- VIM::aggr(crime_df,
                              , "Pattern"))
 
 
-#par(oma=c(2,0,0,0))
-par(mar=c(3,0,0,0))
-#hist(1:1000)
 summary(missing_plot)
-
-
-
-
-
-
 ```
 
 ## The Variables
 
-From the data set's original 22 variables, we have retained some of them and derived new variables. The new set of variables that fall into three categories and a brief description of them follows:
+This data set presents some unique visualization challenges since it contains only categorical and no continous variables. From the data set's original 22 variables, we have retained some of them and derived new variables. The new set of variables that fall into three categories and a brief description of them follows:
+
+```{r}
+str(crime_df)
+```
+
 
 1. Crime Variables:
 
 + `Crime`: 
 
-+ `Crime.Type`: We categorized the 
++ `Crime.Type`: Violent/Nonviolent. We categorized the 
 
-+ `Description`:
++ `Description`: 
 
-+ `Arrest`:
++ `Arrest`: true/false. Whether an arest was made.
 
 + `Domestic`
 
@@ -163,16 +167,6 @@ From the data set's original 22 variables, we have retained some of them and der
 
 + `Location.Description`
 
-variables include the date and time, lat/long, neighborhood, type of location, crime category, and whether an arrest was made.
-
-```{r}
-str(crime_raw)
-str(crime_df)
-names(crime_df)
-```
-
-
-
 
 ```{r stats}
 sort(table(crime_df$Year), decreasing = T)
@@ -186,11 +180,9 @@ str(crime_df)
 
 ## Categorical Variable Values
 
-```{r catvalues, fig.width=12, fig.height=12}
-#devtools::install_github('hadley/ggplot2')
-install_load("plotly")
-#install.packages("tidyverse")
+Let's take a look at the frequencies of the categorical variable values.
 
+```{r catvalues, fig.width=12, fig.height=12}
 ###Categorical & Discrete variables Frequencies
 cat_value_freq <-  
   crime_df %>% 
@@ -209,8 +201,8 @@ p <-
   facet_wrap(~var, scales = "free") +
   coord_flip() + 
   ggthemes::theme_fivethirtyeight()
-
-ggplotly(p)
+p
+#ggplotly(p)
 
 # https://stackoverflow.com/questions/34860535/how-to-use-dplyr-to-generate-a-frequency-table?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
 ```
@@ -222,8 +214,7 @@ ord_cat_value_freq <-
   gather("var", "value") %>% 
   group_by(var) %>% 
   count(var, value) %>%
-  mutate(prop = prop.table(n)) %>% 
-  filter(prop > .02)
+  mutate(prop = prop.table(n)) 
 
 ggplot(data = ord_cat_value_freq, 
        aes(x = reorder(value, prop),
@@ -239,50 +230,143 @@ ggplot(data = ord_cat_value_freq,
 ## Tree map library(treemapify) Crime & Description
 
 ```{r Treemap, fig.width=12, fig.height=12}
+treemap_df <-
+  crime_df %>%
+  group_by(Crime, Crime.Description) %>%
+  summarize(n = n())
+
+treemap(treemap_df, index=c("Crime","Crime.Description"), 
+        vSize="n", type="index",
+        fontsize.labels=c(15,12),
+        fontcolor.labels=c("white","orange"),
+        fontface.labels=c(2,1), 
+        bg.labels=c("transparent"),
+        align.labels=list(
+          c("center", "center"), 
+          c("center", "center")
+        ),                                 
+        overlap.labels=0.1,                     
+        inflate.labels=F
+      )
+
+#https://www.r-graph-gallery.com/236-custom-your-treemap/
+```
+
+## Mosiac Plot  library(GoodmanKruskal) library(vcd)
 
 
-treemap_df <- 
+
+```{r, fig.width=12, fig.height=12}
+top_violent_crimes <- names(sort(table(subset(crime_df, Crime.Type == "Violent", select = Crime)), decreasing = T)[1:5])
+
+mosaic_data <- 
   crime_df %>% 
-  dplyr::select(c(parent = Crime,
-                  id = Crime.Description)) %>% 
-  group_by() %>% 
-  count(parent, id)
+  filter(Crime %in% top_violent_crimes) %>% 
+  dplyr::select(c(Crime, Arrest)) %>% 
+  mutate_if(is.factor, as.character) %>% 
+  mutate(Crime = ifelse(Crime == "MOTOR VEHICLE THEFT", "AUTO THEFT", Crime)) %>% 
+  table()
 
-treeMapCoordinates <- treemapify(treemap_df,
-                                 area = "n"#,
-                                 #fill = "parent",
-                                 # label = "id",
-                                 #group = "parent"
-                                 )
+vcd::mosaic(mosaic_data, shade = T, legend = TRUE)
+```
 
-# treeMapPlot <- ggplotify(treeMapCoordinates) +
-#                   scale_x_continuous(expand = c(0, 0)) +
-#                   scale_y_continuous(expand = c(0, 0)) +
-#                   scale_fill_brewer(palette = "Dark2")
 
-ggplot2::ggplot(treeMapCoordinates
-                ) + geom_treemap(ggplot2::aes(area = n, fill = n))
-print(treeMapPlot)
+## Balloon Plot
+
+
+
+```{r balloon, fig.width=12, fig.height=12}
+install_load(c("ggpubr", "viridis"))
+
+
+#crime_df[, c("Crime", "Location.Description")]
+
+top_violent_crimes <- names(sort(table(subset(crime_df, Crime.Type == "Violent", select = Crime)), decreasing = T)[1:5])
+
+balloon_data <- 
+  crime_df %>% 
+  filter(Crime %in% top_violent_crimes) %>% 
+  group_by(Crime, Location.Description) %>% 
+  #summarize(n = n()) %>%
+  count() %>%
+  mutate(prop = prop.table(n)) %>% 
+  filter(prop  > .02)
+
+ggpubr::ggballoonplot(data = balloon_data, fill = "n")+
+  scale_fill_viridis(option = "C")
+  
 
 ```
 
-## Mosiac Chart  library(GoodmanKruskal) library(vcd)
 
 mosaic(HairEyeColor, shade = TRUE, legend = TRUE) 
 ## gballoonplot() [in ggpubr]
 http://www.sthda.com/english/articles/32-r-graphics-essentials/129-visualizing-multivariate-categorical-data/
 
 # Crime Across Time
-## Day of Week by Hour Heatmap
+
+## The General Trend
+
+```{r trend, fig.width=12, fig.height=12}
+total_crime_17years <-
+  crime_df %>% 
+  mutate_if(is.factor, as.character) %>% 
+  mutate(Year = as.integer(as.character(Year))) %>% 
+  group_by(Crime.Type, Year) %>% 
+  summarize(reported_incidents = n()) 
+
+ggplot(data = total_crime_17years, aes(x = Year, y = reported_incidents, fill = Crime.Type)) +
+  geom_area() + 
+  theme_fivethirtyeight()
+```
+
+# Small Multiples of Crimes
+
+```{r, fig.width=12, fig.height=12}
+crime_17years <-
+  crime_df %>% 
+  mutate_if(is.factor, as.character) %>% 
+  mutate(Year = as.integer(as.character(Year))) %>% 
+  #dplyr::select(Year, Crime) %>% 
+  group_by(Crime, Year) %>% 
+  summarize(reported_incidents = n()) %>% 
+  group_by(Crime) %>% 
+  mutate(total_years = n()) %>% 
+  filter(total_years > 15)
+
+
+ggplot(data = crime_17years, aes(x = Year, y = reported_incidents, color = "red")) + 
+  geom_line() + facet_wrap(~Crime) + 
+  theme_fivethirtyeight()
+```
+## Animated Bubble chart library(gganimate) library(gapminder)
+
+## Heatmap: Crime Incidents by Time of Day and Day of Week
+
+```{r Heatmap, fig.width=12, fig.height=12}
+heatmap_data <- 
+  crime_df %>% 
+  dplyr::select(DayOfWeek, Hour) %>% 
+  table()
+  
+heatmap(heatmap_data, Colv = NA, Rowv = NA, scale="column")
+#https://www.r-graph-gallery.com/215-the-heatmap-function/
+
+```
+
+
+
 ## forecast::ggseasonplot
 ## continuous datatime by 
+
 ## other periodicity
-## Animated Bubble chart library(gganimate) library(gapminder)
-https://www.r-bloggers.com/to-eat-or-not-to-eat-thats-the-question-measuring-the-association-between-categorical-variables/
+
+
 
 # Crime by Community Area
 ## Bivariate Cloropleth
 ## Community Areas
+
 ## Population Pyramid: Community Areas by Crime.Type
 http://r-statistics.co/Top50-Ggplot2-Visualizations-MasterList-R-Code.html
 
