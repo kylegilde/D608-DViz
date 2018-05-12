@@ -12,13 +12,17 @@ installed_and_loaded <- function(pkg){
 packages <- c("shiny","rsconnect", "tidyverse", "ggthemes", "shinythemes", "quantmod", "zoo") 
 #installed_and_loaded(packages)
 sapply(packages, require, character.only = TRUE, quietly = TRUE, warn.conflicts = FALSE)
+#devtools::install_github("rstudio/rsconnect")
 
 # read data
 cdc <- read.csv("https://raw.githubusercontent.com/kylegilde/D608-DViz/master/data/cleaned-cdc-mortality-1999-2010-2.csv")
 str(cdc)
 
+cdc2010 <- dplyr::filter(cdc, Year == 2010)
+
 # add YoY variables
-cdc <- cdc %>% 
+cdc <- 
+  cdc %>% 
   arrange(State, ICD.Chapter, Year) %>% 
   group_by(State, ICD.Chapter) %>% 
   mutate(
@@ -80,7 +84,7 @@ ui <- fluidPage(theme = shinytheme("cosmo"),
         )
       )
     ),
-    # TAB #1  
+    # TAB #2  
     tabPanel("Question 2",
              
     # Page title
@@ -92,11 +96,11 @@ ui <- fluidPage(theme = shinytheme("cosmo"),
           # dropdown menus
           selectInput(inputId = "causeSelector2", 
                       label = "Select Cause of Death", 
-                      choices = unique(cdc2010$ICD.Chapter)
+                      choices = unique(cdc$ICD.Chapter)
           ),
           selectInput(inputId = "stateSelector", 
                       label = "Select States", 
-                      choices = unique(cdc2010$State),
+                      choices = unique(cdc$State),
                       multiple = TRUE
           )
         ),
@@ -130,7 +134,7 @@ server <- function(input, output) {
   # PLOT #2
   output$MortalityRateChange <- renderPlot({
     
-    plot_data <- subset(cdc2010, ICD.Chapter == input$causeSelector2)
+    plot_data <- subset(cdc, ICD.Chapter == input$causeSelector2)
     
     state_df <- subset(cdc, ICD.Chapter == input$causeSelector2 & State %in% input$stateSelector)
     national_df <- subset(nationwide_cdc, ICD.Chapter == input$causeSelector2)
