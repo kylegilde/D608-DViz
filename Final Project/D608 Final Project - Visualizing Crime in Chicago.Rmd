@@ -357,9 +357,27 @@ heatmap(heatmap_data, Colv = NA, Rowv = NA, scale="column")
 
 
 ## forecast::ggseasonplot
-## continuous datatime by 
 
-## other periodicity
+```{r, fig.width=12, fig.height=12}
+install_load(c("forecast", "fpp2", "zoo"))
+
+homicides_df <-
+  crime_df %>% 
+  #dplyr::filter(Crime == "HOMICIDE") %>% 
+  dplyr::group_by(Year, Month) %>%
+  arrange(Year, Month) %>% 
+  summarise(Reported_homicides = sum(ifelse(Crime.Type == "Violent", 1, 0))) 
+
+homicides_ts <- ts(homicides_df$Reported_homicides, start=c(2001, 1), end=c(2017, 12), frequency=12)    
+
+
+
+ggseasonplot(homicides_ts, year.labels=TRUE, year.labels.left=TRUE) +
+  ylab("Reported Incidents") +
+  ggtitle("Seasonal plot of Violent Crime Incidents")
+
+
+```
 
 
 
