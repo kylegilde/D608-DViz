@@ -1,6 +1,6 @@
 # Data Visualization
 
-This repo demonstates several data visualization techniques used to perform exploratory data analysis (EDA).
+This repo demonstates several data visualization techniques used to perform exploratory data analysis (EDA), including R, Python, Shiny, Javascript & D3
 
 [Visualizing Crime in Chicago](https://rpubs.com/kylegilde/FinalProjectVisualizingCrimeinChicago): Using R visualizations to perform comprehensive exploratory data analysis.
 
