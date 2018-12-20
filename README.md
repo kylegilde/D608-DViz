@@ -1,2 +1,5 @@
-# D608-Data-Viz
-CUNY Data Visualization
+# Data Visualization
+
+This repo demonstates various visualization techniques.
+
+[Visualizing Crime in Chicago](https://rpubs.com/kylegilde/FinalProjectVisualizingCrimeinChicago)
