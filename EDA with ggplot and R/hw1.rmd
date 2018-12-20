@@ -1,0 +1,250 @@
+---
+title: "DATA 608 Data Viz" 
+subtitle: "Module 1"
+author: "Kyle Gilde"
+date: "2/4/2018"
+output: 
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+    toc: true
+    toc_depth: 3
+---
+
+
+```{r knitr_options, echo=FALSE}
+knitr::opts_chunk$set(
+                      error = FALSE
+                      ,message = FALSE
+                      #,tidy = TRUE
+                      ,cache = TRUE
+                      )
+```
+
+
+```{r packages, echo=F, collapse=T} 
+#required packages
+packages <- c("prettydoc", "psych", "knitr", "tidyverse", "ggthemes", "scales") 
+
+#see if we need to install any of them
+installed_and_loaded <- function(pkg){
+  #CODE SOURCE: https://gist.github.com/stevenworthington/3178163
+  new.pkg <- pkg[!(pkg %in% installed.packages()[, "Package"])]
+  if (length(new.pkg)) install.packages(new.pkg, dependencies = TRUE)
+  sapply(pkg, require, character.only = TRUE, quietly = TRUE, warn.conflicts = FALSE)
+}
+
+#excute function and display the loaded packages
+data.frame(installed_and_loaded(packages))
+```
+
+**Principles of Data Visualization and Introduction to ggplot2**
+
+I have provided you with data about the 5,000 fastest growing companies in the US, as compiled by Inc. magazine. lets read this in:
+
+
+
+
+```{r}
+
+inc <- read.csv("https://raw.githubusercontent.com/charleyferrari/CUNY_DATA_608/master/module1/Data/inc5000_data.csv", header= TRUE)
+
+```
+
+And lets preview this data:
+
+```{r}
+
+head(inc)
+
+```
+
+
+```{r}
+
+summary(inc)
+
+```
+
+##Non-visual exploration
+
+Think a bit on what these summaries mean. Use the space below to add some more relevant non-visual exploratory information you think helps you understand this data:
+
+**Let's create a table that shows the class types, `NA` counts & unique values of each variable**
+
+```{r metadata}
+metadata <- function(df){
+  ###Takes a data frame & Checks NAs, class types, inspects the unique values
+  df_len <- nrow(df)
+  NA_ct = as.vector(rapply(df, function(x) sum(is.na(x))))
+
+  #create dataframe  
+  df_metadata <- data.frame(
+    class_type = rapply(df, class),
+    n_rows = rapply(df, length),
+    complete_cases = sum(complete.cases(df)),
+    NA_ct = NA_ct,
+    NA_pct = NA_ct / df_len * 100,
+    unique_value_ct = rapply(df, function(x)length(unique(x))),
+    most_common_values_sample = rapply(inc, function(x) str_replace(paste(names(sort(summary(as.factor(x)), decreasing=T))[1:5], collapse = '; '), "\\(Other\\); ", ""))
+  )
+  return(df_metadata)
+}
+
+kable(metadata(inc), digits = 2)
+```
+
+**Let's use the psych package's `describe` function to create a table that shows a more comprehensive set of summary statistics for each numerical variable.**
+
+```{r metrics}
+metrics <- function(df){
+  metrics_only <- df[, which(rapply(df, class) %in% c("numeric", "integer"))]
+  df_metrics <- t(describe(metrics_only, quant = c(.25,.75)))[2:15,]
+  return(df_metrics)
+}
+
+kable(metrics(inc), digits = 2, format.args = list(big.mark = ',', scientific = F, drop0trailing = T))
+
+```
+
+## Question 1
+
+Create a graph that shows the distribution of companies in the dataset by State (ie how many are in each state). 
+
++ There are a lot of States, so consider which axis you should use. 
+
++ This visualization is ultimately going to be consumed on a 'portrait' oriented screen (ie taller than wide), which should further guide your layout choices.
+
+```{r plt1}
+ggplot(data = inc) + 
+  geom_bar(mapping = aes(x = reorder(State, State, function(x) length(x)))) + 
+  labs(x = "State",
+       title = "Number of Companies by State") + 
+  theme(axis.text.y = element_text(size=6, color="black", face = "bold"),
+        plot.margin=unit(c(0,3,0,3), "cm")) +
+  coord_flip()
+```
+
+## Question 2
+
+Lets dig in on the state with the 3rd most companies in the data set. 
+
++ Imagine you work for the state and are interested in how many people are employed by companies in different industries. 
+
++ Create a plot that shows the average and/or median employment by industry for companies in this state (only use cases with full data, use R's `complete.cases()` function.) 
+
++ In addition to this, your graph should show how variable the ranges are, and you should deal with outliers.
+
+```{r data2}
+state_third_most <- names(sort(table(inc$State), decreasing = T))[3]
+df_third_most <- subset(inc, State == state_third_most)
+df_third_most <- df_third_most[complete.cases(df_third_most),]
+```
+
+
+
+###Plot 2.1
+
++ **One way to visualize these distributions is to resize the plot limits so that it does not display the most extreme outliers.**
+
++ **However, some of the boxes are still too tiny to see.**
+
+```{r plt2.1}
+#calculate some parameters to deal with the outliers
+bpstats <- boxplot(Employees ~ Industry, data = df_third_most, plot = F)$stats
+ylimits <- c(0, ceiling(max(bpstats) / 100)) * 100
+ybreaks <- seq(ylimits[1], ylimits[2], by = 200)
+outliers_not_shown <- paste(sum(df_third_most$Employees > max(ylimits)), "outlier(s) not displayed")
+
+#to preserve alphabetical order when flipped
+reordered_x_lab <- scale_x_discrete(limits = rev(levels(inc$Industry)))
+
+plt_base <- ggplot(data = df_third_most, mapping = aes(x = Industry, y = Employees))
+
+plt_base +
+  geom_boxplot() +
+  labs(title = "Company Sizes in NY by Industry",
+       caption = paste("Red dot = mean", outliers_not_shown, sep = "\n")) +
+  reordered_x_lab +
+  scale_y_continuous(breaks = ybreaks) +
+  stat_summary(fun.y=mean, geom="point", size=2, color = "red") +
+  coord_flip(ylim = ylimits) +
+  theme_fivethirtyeight()
+
+```
+
+[Stackoverflow: Ignore outliers in ggplot2 boxplot](https://stackoverflow.com/questions/5677885/ignore-outliers-in-ggplot2-boxplot)
+
+[Stackoverflow: Boxplot show the value of mean](https://stackoverflow.com/questions/19876505/boxplot-show-the-value-of-mean)
+
+###Plot 2.2
+
++ **Another way to visualize these distributions is perform a log function in order to rescale the extreme outliers.**
+
++ **Now the extreme outliers can be seen.**
+
+```{r plt2.2}
+plt_base +
+  geom_boxplot() +
+  reordered_x_lab +
+  scale_y_log10(breaks = 10^(1:4)) +
+  labs(title = "NY Company Sizes (log10) by Industry") +
+  coord_flip() +
+  theme_fivethirtyeight()
+```
+
+## Question 3
+
+Now imagine you work for an investor and want to see which industries generate the most revenue per employee. Create a chart that makes this information clear. Once again, the distribution per industry should be shown.
+
+###Plot 3.1
+
++ **I'm assuming that we are doing the revenue/employee division at the company-level granularity. Otherwise I believe that showing distribution per industry doesn't make any sense.**
+
++ **I removed 12 incomplete cases.**
+
++ **First, let's resize the plot limits so that it does not display the most extreme outliers.**
+
+```{r plt3.1}
+#create data
+inc_q3 <- drop_na(data.frame(
+  Industry = inc$Industry,
+  revenue_per_employee = with(inc, Revenue/Employees)
+))
+
+#calculate some parameters to deal with the outliers
+bpstats <- boxplot(revenue_per_employee ~ Industry, data = inc_q3, plot = F)$stats
+ylimits <- c(0, ceiling(max(bpstats) / 100000) * 100000)
+ybreaks <- seq(0, ylimits[2], by = 500000)
+outliers_not_shown <- paste(sum(inc_q3$revenue_per_employee > max(ylimits), na.rm = T), "outlier(s) not displayed")
+
+#plot
+plt_base2 <- ggplot(data = inc_q3, mapping = aes(x = Industry, y = revenue_per_employee))
+
+plt_base2 +
+  geom_boxplot(outlier.size = 1) +
+  labs(title = "Distribution of Revenue $ per Employee",
+       caption = paste("Red dot = mean", outliers_not_shown, sep = "\n")) +
+  reordered_x_lab +
+  scale_y_continuous(breaks = ybreaks, labels = comma(ybreaks)) +
+  stat_summary(fun.y=mean, geom="point", size=2, color = "red") +
+  coord_flip(ylim = ylimits) +
+  theme_fivethirtyeight()
+```
+
+###Plot 3.2
+
++ **Now, let's use the log10 scale so we can see the most extreme outliers.**
+
+```{r plt3.2}
+
+breaks_log10 <- 10^(4:7)
+
+plt_base2 +
+  geom_boxplot(outlier.size = 1) +
+  reordered_x_lab +
+  scale_y_log10(breaks = breaks_log10, labels = comma(breaks_log10)) +
+  labs(title = "Distr. of Revenue $ per Employee (log10)") +
+  coord_flip() +
+  theme_fivethirtyeight()
+```

@@ -1,0 +1,468 @@
+---
+title: "DATA 608 CUNY Data Science Data Visualization" 
+subtitle: "Final Project - Visualizing Crime in Chicago"
+author: "Kyle Gilde"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: 
+  html_document:
+    theme: yeti
+    #highlight: 
+    code_folding: hide
+    toc: true
+    toc_float:
+      collapsed: true
+      smooth_scroll: true
+---
+
+
+```{r options_pkgs, echo=F, warning=F, message=F, results=F}
+
+knitr::opts_chunk$set(
+                      error = F
+                      , message = F
+                      #,tidy = T
+                      , cache = T
+                      , warning = F
+                      , results = F
+                      )
+
+install_load <- function(pkg){
+  # Load packages & Install them if needed.
+  # CODE SOURCE: https://gist.github.com/stevenworthington/3178163
+  new.pkg <- pkg[!(pkg %in% installed.packages()[, "Package"])]
+  if (length(new.pkg)) install.packages(new.pkg, dependencies = TRUE)
+  sapply(pkg, require, character.only = TRUE, quietly = TRUE, warn.conflicts = FALSE)
+}
+
+# required packages
+packages <- c("tidyverse","knitr", "ggthemes", "reshape2", "VIM", "lubridate", "data.table", "ggplot2", "scales", "treemap", "vcd", "tmap", "tmaptools", "sf", "leaflet", "ggpubr", "viridis", "forecast", "fpp2", "zoo", "plotly")
+
+install_load(packages)
+
+```
+
+# About the Data Set
+
++ This [Crimes data set](https://data.cityofchicago.org/Public-Safety/Crimes-2001-to-present/ijzp-q8t2) is made available on the [City of Chicago's Data Portal](https://data.cityofchicago.org) and is sourced from the  Chicago Police Department's CLEAR (Citizen Law Enforcement Analysis and Reporting) system. 
+
++ Each record is a reported incident of crime, and for this analysis, we have selected the 6.5 million records between the years 2001 and 2017. 
+
++ The Chicago Police Department does not guarantee the completeness of the records and cautions against making comparision over time. Our visualizations will look at changes over time with the caveat that the data set may be missing data at random or not a random.
+
+```{r rawdata, warning=F, message=F, results=F}
+#get raw data
+setwd("C:\\Users\\kyleg")
+memory.limit(size = 16000)
+if (!exists("crime_raw")) {
+  tryCatch(crime_raw <- read.csv("crime_raw.csv"), 
+     error = function(x) {
+       print("File not in WD. Downloading from the source.")
+       crime_url <- "https://data.cityofchicago.org/api/views/ijzp-q8t2/rows.csv?accessType=DOWNLOAD"
+       crime_raw <- read.csv("crime_url")
+       write.csv(crime_raw, "crime_raw.csv")
+     }
+  )
+}
+```
+
+## The Variables
+
++ This data set presents some unique visualization challenges since it contains only categorical and no continous variables. 
+
++ The variables we have retained or derived from the original set fall into three broad categories, and a brief description of them follows:
+
+1. **Crime Variables**
+
++ `Crime`: The name of the crime.
+
++ `Crime.Type`: Violent/Nonviolent. We categorized have categorized the crimes according to the [FBI's definition](https://ucr.fbi.gov/crime-in-the-u.s/2010/crime-in-the-u.s.-2010/violent-crime) of violent crime as "those offenses which involve force or threat of force."
+
++ `Crime.Description`: A short description of the crime.
+
++ `Arrest`: true/false. Whether an arest was made.
+
++ `Domestic`: Whether the incident was related to the Illinois Domestic Violence Act.
+
+2. **Time Variables**
+
++ From the provided timestamp of the incident, we have parsed the following time dimensions using the `lubridate` package: `Date`, `Year`, `Month`, `DayOfWeek` and `Hour`
+
+3. **Location Variables**
+
++ `Community.Area`:  These are the [77 neighborhoods]([Community Areas](https://data.cityofchicago.org/Facilities-Geographic-Boundaries/Boundaries-Community-Areas-current-/cauq-8yn6)) recognized by the city of Chicago
+
++ `Location.Description`: Describes where the incident took place.
+
+```{r munge}
+#get the community area table
+setwd("C:\\Users\\kyleg")
+community_url <- "https://data.cityofchicago.org/api/views/igwz-8jzy/rows.csv?accessType=DOWNLOAD"
+if (!exists("community_area_df")){community_area_df <- read.csv(community_url)}
+community_area_key <- dplyr::select(community_area_df, c(AREA_NUMBE, COMMUNITY))
+
+#munge data
+if (!exists("crime_df")){
+    crime_df <- 
+       crime_raw %>% 
+       data.table() %>% 
+       filter(Year < 2018) %>% 
+       #sample_n(500000) %>% 
+       left_join(community_area_key, 
+             by = c("Community.Area" = "AREA_NUMBE")) %>% 
+       mutate(
+          DateTime = lubridate::mdy_hms(as.character(Date)),
+          Date_rw = as.Date.POSIXct(DateTime),
+          Year = as.ordered(Year),
+          Month = month(DateTime, label = T),
+          DayOfMonth = as.ordered(day(DateTime)),
+          DayOfWeek = wday(DateTime, label = T),
+          Hour = as.ordered(hour(DateTime)),
+          Crime.Type = as.factor(
+          ifelse(Primary.Type %in% c("ROBBERY", "BURGLARY", 
+               "CRIM SEXUAL ASSAULT", "HOMICIDE", "HUMAN TRAFFICKING",
+               "BATTERY", "SEX OFFENSE", "KIDNAPPING", 
+               "DOMESTIC VIOLENCE", "ASSAULT", "ARSON", "INTIMIDATION"), 
+             "Violent", "Nonviolent"))
+         ) %>% 
+       dplyr::select(
+         c(Crime = Primary.Type, Crime.Type, Crime.Description = Description, Arrest, Domestic, 
+         DateTime, Date = Date_rw, Year, Month, DayOfMonth, DayOfWeek, Hour,
+         Community.Area = COMMUNITY, Location.Description))  
+} 
+```
+
+## Why this data set
+
+Over the last several years, Chicago has become a trope for urban crime & violence within our social and political discourse. However, from my experience, the crime is not spread uniformly across the city. Consequently, let's explore how incidents of crime in Chicago vary across time & space.
+
+## Examine Missing Values
+
++ Our first plot uses the `VIM` package, which is an acronym for the Visualization and Imputation of Missing Values. 
+
++ The bar plot on the right shows that the `Community.Area` is missing 9.5% of its values. We will have to hope that these values are missing at random in order to not have biased representations of the variable.
+
++ If we had more than one variables missing values, the left-side plot would show whether the missingness was correlated.
+
+```{r missing, fig.width=7, fig.height=7, results=F}
+## Missing Values
+memory.limit(16000)
+missing_plot <- VIM::aggr(crime_df,  
+                      numbers = T, 
+                      sortVars = T,
+                      col = c("lightgreen", "darkred", "orange"),
+                      labels=str_sub(names(crime_df), 1, 8), 
+                      ylab=c("Missing Value Counts", "Pattern"))
+
+
+summary(missing_plot)
+```
+
+# Exploring the Categorical Variables
+
+## Value Frequency Bar Plots
+
++ Now let's take a look at the frequencies of the categorical variable values for both violent and nonviolent types of crime. We have included all the values that occur at least in 2% of the variables.
+
++ The most common type of incident is a nonviolent offense that doesn't result in an arrest.
+
++ Unfortunately, the missiness in the `Community.Area` variable is so severe that it exceeds the other values in the variable.
+
++ In the `Location.Description`, if we add the frequencies of RESIDENT & APARTMENT, we can see that incidents of crime occur just as often in the home as they do in the STREET.
+
+```{r catvalues, fig.width=11, fig.height=11}
+###Categorical & Discrete variables Frequencies
+cat_value_freq <-  
+  crime_df %>% 
+  select_if(is.factor) %>% 
+  select_if(function(x) !is.ordered(x)) %>% 
+  gather("var", "value") %>% 
+  group_by(var) %>% 
+  count(var, value) %>%
+  mutate(prop = prop.table(n)) %>% 
+  filter(prop > .02)
+
+cat_plot1 <-
+  ggplot(data = cat_value_freq,
+       aes(x = reorder(stringr::str_wrap(value, 20), prop),
+           y = prop)) +
+  geom_bar(stat = "identity", fill = "tomato3") +
+  coord_flip() +
+  facet_wrap(~var, ncol = 3, scales = "free") +
+  ggthemes::theme_fivethirtyeight()
+
+cat_plot1
+```
+
+**Source(s):** [How to use DPLYR to generate a frequency table]( https://stackoverflow.com/questions/34860535/how-to-use-dplyr-to-generate-a-frequency-table?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa)
+
+## Treemap: Crime & Description
+
++ Next let's look at the hierarchical relationship between `Crime` and `Crime.Description` for violent crimes using a treemap plot from the `treemap` package.
+
++ Battery & assaults make up the majority of violent crime incidents, and homicides are a small fraction.
+
++ Among the incidents of robbery, we can see that the stongarm version of the crime is committed just as often as the armed version. 
+
+```{r Treemap, fig.width=8, fig.height=8}
+treemap_df <-
+  crime_df %>%
+  dplyr::filter(Crime.Type == "Violent") %>% 
+  group_by(Crime, Crime.Description) %>%
+  summarize(n = n())
+
+treemap(treemap_df, 
+        index=c("Crime","Crime.Description"), 
+        vSize="n", 
+        type="index",
+        fontsize.labels=c(15,12),
+        fontcolor.labels=c("white","orange"),
+        fontface.labels=c(2,1), 
+        bg.labels=c("transparent"),
+        align.labels=list(
+          c("center", "center"), 
+          c("center", "top")
+        ),                                 
+        overlap.labels=0.2,                     
+        inflate.labels=F
+      )
+
+```
+
+
+**Source(s):** [Custom Treemaps](https://www.r-graph-gallery.com/236-custom-your-treemap/)
+
+
+## Mosiac Plot: Violent Crime & Arrests
+
++ Let's use a mosaic plot to examine the relationship between the top 3 violent crimes and whether an arrest was made. 
+
++ We can see that in less than 25% of these incidents, an arrest was made.
+
++ The solid blue and red colors indicate that we reject the chi-squared test's null hypothesis of independence.
+
+```{r mosaic, fig.width=7, fig.height=7}
+top_violent_crimes <- names(sort(table(subset(crime_df, Crime.Type == "Violent", select = Crime)), decreasing = T)[1:3])
+
+mosaic_data <- 
+  crime_df %>% 
+  filter(Crime %in% top_violent_crimes) %>% 
+  dplyr::select(c(Crime, Arrest)) %>% 
+  mutate_if(is.factor, as.character) %>% 
+  mutate(Crime = ifelse(Crime == "MOTOR VEHICLE THEFT", "AUTO THEFT", Crime)) %>% 
+  table()
+
+vcd::mosaic(mosaic_data, shade = T, legend = TRUE)
+```
+**Source(s):** [Visualizing Multivariate Categorical Data](http://www.sthda.com/e
+nglish/articles/32-r-graphics-essentials/129-visualizing-multivariate-categorical-data/)
+
+
+
+
+```{r balloon, fig.width=7, fig.height=7}
+## Balloon Plot
+# top_violent_crimes <- names(sort(table(subset(crime_df, Crime.Type == "Violent", select = Crime)), decreasing = T)[1:5])
+# 
+# balloon_data <- 
+#   crime_df %>% 
+#   filter(Crime %in% top_violent_crimes) %>% 
+#   group_by(Crime, Location.Description) %>% 
+#   #summarize(n = n()) %>%
+#   count() %>%
+#   mutate(prop = prop.table(n)) %>% 
+#   filter(prop  > .02)
+# 
+# ggpubr::ggballoonplot(data = balloon_data, fill = "n") +
+#   scale_fill_viridis(option = "C")
+  
+
+#**Source(s):** [Visualizing Multivariate Categorical Data](http://www.sthda.com/e
+#nglish/articles/32-r-graphics-essentials/129-visualizing-multivariate-categorical-data/)
+```
+
+
+
+# Crime Across Time
+
+## The General Trend
+
++ If we assume that our data set is not grossly underreporting crime in recent years, we see that the number of violent crimes per year has fallen by 100,000 over the period.
+
++ [Other research](http://www.chicagotribune.com/news/data/ct-homicide-spikes-comparison-htmlstory.html) does confirm that crime rates have dramatically decreased over this period. 
+
++ This chart uses the `plotly` tooltips.
+
+```{r trend, fig.width=9, fig.height=6, results=T}
+total_crime_17years <-
+  crime_df %>% 
+  mutate_if(is.factor, as.character) %>% 
+  mutate(Year = as.integer(as.character(Year))) %>% 
+  group_by(Crime.Type, Year) %>% 
+  summarize(reported_incidents = n()) 
+
+trend_plot <- 
+  ggplot(data = total_crime_17years,
+       aes(x = Year, y = reported_incidents, fill = Crime.Type)) +
+  geom_area() +
+  scale_y_continuous(name = "Reported Incidents", labels = scales::comma) +
+  theme_fivethirtyeight()
+
+ggplotly(trend_plot)
+```
+
+## Small Multiples of Crimes
+
++ We can use Tufte's small multiples concept to see if there are any types of crimes that are defying the declining trend.
+
++ We see that the number of homicides has definitely defied the overall trend along with some minor crimes like public officer interference, obscenity & weapons violation.
+
++ We can use the chart's tooltips to see that there were 114 homicides in 2016 than in 2001.
+
+```{r SmallMultiples, fig.width=10, fig.height=10, results=T}
+crime_17years <-
+  crime_df %>% 
+  #dplyr::filter(Crime.Type == "Violent") %>% 
+  mutate_if(is.factor, as.character) %>% 
+  mutate(Year = as.integer(as.character(Year))) %>% 
+  group_by(Crime, Year) %>% 
+  summarize(reported_incidents = n()) %>% 
+  group_by(Crime) %>% 
+  mutate(total_years = n()) %>% 
+  filter(total_years > 15)
+
+
+sm_plot <- 
+  ggplot(data = crime_17years, 
+       aes(x = Year, y = reported_incidents)) + 
+  geom_line(size = 1.5, color = "red") + 
+  facet_wrap(~Crime, scales = "free") + 
+  scale_y_continuous(name = "Incidents", labels = scales::comma) +
+  scale_x_discrete(label = abbreviate) +
+  theme_tufte()
+
+ggplotly(sm_plot)
+```
+
+## Heatmap: Crime Incidents by Time of Day and Day of Week
+
++ The plot below was created with the base R `heatmap` function. 
+
++ The red areas represent the times of the day and the days of the week that receive the most reports of criminal activity. 
+
++ From the red outer ring, we can see that these incidents are concentrated on the weekends and during the weekday late evenings and early mornings. 
+
++ Figuring out how to convert the hours of the 24-hour system to AM/PM required a lot of internet searching and trial and error.
+
+```{r Heatmap, fig.width=7, fig.height=7}
+
+heatmap_data <- 
+  crime_df %>% 
+  dplyr::select(DayOfWeek, Hour) %>% 
+  mutate(Hour = factor(format(strptime(Hour, format='%H'), '%I%p'), levels = format(strptime(0:23, format='%H'), '%I%p'))) %>% 
+  table()
+
+heatmap(heatmap_data, 
+        Colv = NA, 
+        Rowv = NA, 
+        scale = "column")
+```
+
+
+**Source(s):** [](The Heatmap Function)
+https://www.r-graph-gallery.com/215-the-heatmap-function/
+
+## Violent Crime by Month
+
++ The next seasonal plot was created using `ggseasonplot` from the `forecast` package. The most challenging part of creating this plot was figuring out how to create required time-series object from a dataframe. The `ts` function will only take a single vector of values in exact chronological order.
+
++ As I would have expected, Chicago criminals do not like the city's cold months any more than I do. 
+
+```{r ggseasonplot, fig.width=9, fig.height=7, results=T}
+violent_df <-
+  crime_df %>% 
+  #dplyr::filter(Crime == "HOMICIDE") %>% 
+  dplyr::group_by(Year, Month) %>%
+  arrange(Year, Month) %>% 
+  summarise(Reported_incidents = sum(ifelse(Crime.Type == "Violent", 1, 0))) 
+
+#create time-series object
+violent_ts <- ts(violent_df$Reported_incidents, start=c(2001, 1), end=c(2017, 12), frequency=12)    
+
+seasonal_plot <- 
+  ggseasonplot(violent_ts, year.labels=TRUE, year.labels.left=TRUE) +
+  ylab("Reported Incidents") +
+  ggtitle("Seasonal Plot of Violent Crime Incidents")
+
+ggplotly(seasonal_plot)
+```
+
+**Source(s):** [Create maps in R in 10 (fairly) easy steps](https://www.computerworld.com/article/3038270/data-analytics/create-maps-in-r-in-10-fairly-easy-steps.html)
+
+# Crime by Neighborhood
+
+##Violent Crime Choropleth Map
+
++ Finally, our last plot was created using the `tmaptools`, `sf` & `leaflet` packages.
+
++ The 1st two packages were used to read & format the [Chicago shape file](https://data.cityofchicago.org/api/geospatial/cauq-8yn6?method=export&format=Shapefile), and `leaflet` created this interactive cloropleth. Its functionality includes zooming, panning and tooltips.
+
++ As you can see, crime is not evenly distributed across the city. The areas of dark red have the most reported incidents.
+
++ Using `leaflet` tooltips, we can see that the neighbor of Austin has the most incidents of crime.
+
+
+
+```{r Choropleth, fig.width=8, fig.height=8, results=T}
+#summerize by community area
+ca_data <- 
+  crime_df %>% 
+  group_by(Community.Area, Crime.Type) %>% 
+  na.omit() %>% 
+  summarize(Reported_incidents = n()) %>% 
+  spread(Crime.Type, Reported_incidents) %>% 
+  ungroup() %>% 
+  mutate(Violent_incident_rank = rank(-Violent))
+
+##Download shape file:
+##https://data.cityofchicago.org/api/geospatial/cauq-8yn6?method=export&format=Shapefile
+Chicago_shp <- tmaptools::read_shape(file="C:\\Users\\kyleg\\D608-Data-Viz\\Final Project\\Chicago.shp\\geo_export_9d342e48-03e4-4de6-8064-407cebb2a418.shp", as.sf = TRUE)
+
+Chicago_shp <- 
+  Chicago_shp %>% 
+  left_join(ca_data, by = c("community" = "Community.Area"))
+
+violent_palette <- colorNumeric(palette = "Reds"
+                                , domain = Chicago_shp$Violent)
+
+tooltips <- paste0(Chicago_shp$community, 
+                   "  - Violent incidents: ",
+                   formatC(Chicago_shp$Violent, big.mark=","),
+                   " - Rank: ", Chicago_shp$Violent_incident_rank)
+
+
+Chicago_map <- sf::st_transform(Chicago_shp, "+proj=longlat +datum=WGS84")
+  
+leaflet(Chicago_map) %>% 
+  addProviderTiles("CartoDB.PositronNoLabels") %>%
+  #select backgrounds:http://leaflet-extras.github.io/leaflet-providers/preview/index.html
+  addPolygons(stroke = F,
+              smoothFactor = .02,
+              fillOpacity = .6,
+              popup = tooltips,
+              color = ~violent_palette(Chicago_shp$Violent))
+
+
+#tmap::qtm(Chicago_shp,  "Reported_incidents")
+```
+
+**Source(s):** [Create maps in R in 10 (fairly) easy steps](https://www.computerworld.com/article/3038270/data-analytics/create-maps-in-r-in-10-fairly-easy-steps.html)
+
+
+```{r}
+## Community Areas
+## Population Pyramid: Community Areas by Crime.Type
+##http://r-statistics.co/Top50-Ggplot2-Visualizations-MasterList-R-Code.html
+#Animated Bubble chart library(gganimate) library(gapminder)
+```
+
+
